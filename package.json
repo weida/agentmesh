@@ -18,10 +18,10 @@
   ],
   "author": "",
   "license": "MIT",
-  "homepage": "https://github.com/agentmesh/agentmesh",
+  "homepage": "https://github.com/weida/agentmesh",
   "repository": {
     "type": "git",
-    "url": "https://github.com/agentmesh/agentmesh.git"
+    "url": "https://github.com/weida/agentmesh.git"
   },
   "peerDependencies": {
     "@streamr/sdk": ">=100.0.0"
