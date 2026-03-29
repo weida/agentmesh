@@ -26,9 +26,9 @@ const deepseek = new OpenAI({
 
 const ETHERSCAN_BASE = 'https://api.etherscan.io/v2/api'
 
-async function etherscan(params) {
+async function etherscan(params, chainId = '1') {
   const url = new URL(ETHERSCAN_BASE)
-  url.searchParams.set('chainid', '1')
+  url.searchParams.set('chainid', chainId)
   url.searchParams.set('apikey', ETHERSCAN_KEY)
   for (const [k, v] of Object.entries(params)) {
     url.searchParams.set(k, v)
@@ -39,6 +39,17 @@ async function etherscan(params) {
     throw new Error(`Etherscan error: ${data.message}`)
   }
   return data.result
+}
+
+// Try Ethereum mainnet first, then Polygon if not found
+async function getTxChain(hash) {
+  for (const [chainId, name] of [['1', 'Ethereum'], ['137', 'Polygon']]) {
+    try {
+      const tx = await etherscan({ module: 'proxy', action: 'eth_getTransactionByHash', txhash: hash }, chainId)
+      if (tx && tx.hash) return { chainId, chainName: name }
+    } catch {}
+  }
+  return { chainId: '1', chainName: 'Ethereum' }
 }
 
 // Known contract labels for common protocols
@@ -64,11 +75,11 @@ function labelAddress(addr) {
   return KNOWN_CONTRACTS[lower] || addr.slice(0, 8) + '...' + addr.slice(-6)
 }
 
-async function getTxData(hash) {
+async function getTxData(hash, chainId = '1') {
   const [txReceipt, txInfo, tokenTxList] = await Promise.allSettled([
-    etherscan({ module: 'proxy', action: 'eth_getTransactionReceipt', txhash: hash }),
-    etherscan({ module: 'proxy', action: 'eth_getTransactionByHash', txhash: hash }),
-    etherscan({ module: 'account', action: 'tokentx', txhash: hash, page: '1', offset: '50' }),
+    etherscan({ module: 'proxy', action: 'eth_getTransactionReceipt', txhash: hash }, chainId),
+    etherscan({ module: 'proxy', action: 'eth_getTransactionByHash', txhash: hash }, chainId),
+    etherscan({ module: 'account', action: 'tokentx', txhash: hash, page: '1', offset: '50' }, chainId),
   ])
 
   return {
@@ -102,19 +113,23 @@ await agent.onTask(async (task, reply) => {
   console.log(`[tx-explainer] Fetching: ${hash}`)
 
   try {
-    const { receipt, tx, tokenTx } = await getTxData(hash)
+    const { chainId, chainName } = await getTxChain(hash)
+    console.log(`[tx-explainer] Detected chain: ${chainName} (${chainId})`)
+    const { receipt, tx, tokenTx } = await getTxData(hash, chainId)
 
     if (!tx) {
-      return reply({ error: 'Transaction not found on Ethereum mainnet' })
+      return reply({ error: 'Transaction not found on Ethereum or Polygon' })
     }
+
+    const nativeToken = chainId === '137' ? 'POL' : 'ETH'
 
     const from = tx.from || ''
     const to = tx.to || ''
     const valueWei = BigInt(tx.value || '0')
-    const valueEth = (Number(valueWei) / 1e18).toFixed(6)
+    const valueNative = (Number(valueWei) / 1e18).toFixed(6)
     const gasUsed = receipt ? parseInt(receipt.gasUsed, 16) : 0
     const gasPrice = parseInt(tx.gasPrice || '0', 16)
-    const gasFeeEth = ((gasUsed * gasPrice) / 1e18).toFixed(6)
+    const gasFeeNative = ((gasUsed * gasPrice) / 1e18).toFixed(6)
     const status = receipt ? (receipt.status === '0x1' ? 'Success' : 'Failed') : 'Pending'
     const blockNumber = receipt ? parseInt(receipt.blockNumber, 16) : 'pending'
     const isContract = to && !KNOWN_CONTRACTS[to.toLowerCase()] && tx.input && tx.input !== '0x'
@@ -132,15 +147,15 @@ await agent.onTask(async (task, reply) => {
       ? tx.input.slice(0, 10) + '...' + `(${Math.floor((tx.input.length - 2) / 2)} bytes)`
       : tx.input
 
-    const prompt = `Explain the following Ethereum transaction in plain language:
+    const prompt = `Explain the following ${chainName} transaction in plain language:
 
 **Hash**: ${hash}
 **Status**: ${status}
 **Block**: ${blockNumber}
 **From**: ${from} (${labelAddress(from)})
 **To**: ${to || '(contract creation)'} (${labelAddress(to)})
-**ETH Value**: ${valueEth} ETH
-**Gas Fee**: ${gasFeeEth} ETH
+**${nativeToken} Value**: ${valueNative} ${nativeToken}
+**Gas Fee**: ${gasFeeNative} ${nativeToken}
 **Calldata**: ${inputPreview}
 ${tokenTx.length > 0 ? `**Token Transfers**:\n${tokenSummary.join('\n')}` : '**Token Transfers**: none'}
 **Known Protocol**: ${KNOWN_CONTRACTS[to?.toLowerCase()] || 'Unknown / EOA'}
@@ -168,12 +183,13 @@ Keep under 130 words. Write for a non-technical audience.`
       explanation,
       from,
       to: to || '(contract creation)',
-      value: `${valueEth} ETH`,
-      gasFee: `${gasFeeEth} ETH`,
+      value: `${valueNative} ${nativeToken}`,
+      gasFee: `${gasFeeNative} ${nativeToken}`,
       status,
       block: String(blockNumber),
-      tokenTransfers: tokenSummary.join('\n') || '无',
-      protocol: KNOWN_CONTRACTS[to?.toLowerCase()] || '未知',
+      tokenTransfers: tokenSummary.join('\n') || 'None',
+      protocol: KNOWN_CONTRACTS[to?.toLowerCase()] || 'Unknown',
+      chain: chainName,
     })
   } catch (err) {
     console.error(`[error] ${err.message}`)
