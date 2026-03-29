@@ -1,0 +1,36 @@
+{
+  "name": "@wei612/agentmesh",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Decentralized AI agent communication bus built on Streamr Network",
+  "main": "sdk/index.mjs",
+  "exports": {
+    ".": "./sdk/index.mjs"
+  },
+  "keywords": [
+    "ai-agent",
+    "decentralized",
+    "streamr",
+    "p2p",
+    "agent-communication",
+    "web3",
+    "pubsub"
+  ],
+  "author": "",
+  "license": "MIT",
+  "homepage": "https://github.com/agentmesh/agentmesh",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/agentmesh/agentmesh.git"
+  },
+  "peerDependencies": {
+    "@streamr/sdk": ">=100.0.0"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "files": [
+    "sdk/",
+    "README.md"
+  ]
+}
