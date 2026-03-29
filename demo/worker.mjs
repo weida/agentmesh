@@ -8,7 +8,8 @@
 import { AgentMesh } from '../sdk/index.mjs'
 
 // Worker uses the main wallet (stream owner, has POL for registration)
-const PRIVATE_KEY = '0x8d4212d3d63f786687cbf1b70c43a905cd2b9e42cf826bfe574bb491b14ea2e4'
+const PRIVATE_KEY = process.env.PRIVATE_KEY
+if (!PRIVATE_KEY) { console.error('Missing PRIVATE_KEY'); process.exit(1) }
 
 const agent = new AgentMesh({
   privateKey: PRIVATE_KEY,
