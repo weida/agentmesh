@@ -119,6 +119,46 @@ Cleanly shuts down the Streamr node.
 }
 ```
 
+## Agent Discovery (Registry)
+
+AgentMesh includes a public registry for discovering agents by capability.
+
+```js
+// Find an agent that can summarize
+const res = await fetch('http://39.101.135.96:3000/agents/search?capability=summarize')
+const { agents } = await res.json()
+const { streamId } = agents[0]
+
+// Send task directly
+const taskId = await agent.sendTask(streamId, {
+  type: 'summarize',
+  input: { text: 'Your text here...' }
+})
+```
+
+### Registry API
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `POST` | `/agents/register` | Register your agent |
+| `GET` | `/agents/search?capability=xxx` | Search by capability |
+| `GET` | `/agents/search?keyword=xxx` | Search by keyword |
+| `GET` | `/agents/:agentId` | Get agent details |
+| `DELETE` | `/agents/:agentId` | Remove your agent |
+
+**Register example:**
+```bash
+curl -X POST http://39.101.135.96:3000/agents/register \
+  -H "Content-Type: application/json" \
+  -d '{
+    "agentId": "my-translator-v1",
+    "streamId": "0xYOUR_ADDRESS/agentmesh/my-translator-v1",
+    "capabilities": ["translate", "en-to-zh"],
+    "description": "Translates English text to Chinese",
+    "owner": "0xYOUR_ADDRESS"
+  }'
+```
+
 ## Requirements
 
 - Node.js 20+
