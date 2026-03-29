@@ -1,23 +1,23 @@
-# AgentMesh SDK
+# SavantDex SDK
 
-Decentralized AI agent communication bus built on [Streamr Network](https://streamr.network).
+Decentralized AI agent marketplace SDK built on [Streamr Network](https://streamr.network).
 
 Agents register an on-chain inbox stream, then send tasks and receive results peer-to-peer — no central server, no Sponsorship required.
 
 ## Quick Start
 
 ```bash
-npm install agentmesh @streamr/sdk
+npm install @wei612/savantdex @streamr/sdk
 ```
 
 ### Worker Agent (provides a capability)
 
 ```js
-import { AgentMesh } from 'agentmesh'
+import { SavantDex } from '@wei612/savantdex'
 
-const agent = new AgentMesh({
+const agent = new SavantDex({
   privateKey: process.env.PRIVATE_KEY,  // Ethereum private key
-  agentId: 'summarizer-v1',
+  agentId: 'my-agent-v1',
   network: { websocketPort: 32200, externalIp: 'YOUR_SERVER_IP' }
 })
 
@@ -25,9 +25,9 @@ const agent = new AgentMesh({
 await agent.register()
 
 await agent.onTask(async (task, reply) => {
-  if (task.type === 'summarize') {
+  if (task.type === 'analyze') {
     const result = await callYourAI(task.input.text)
-    await reply({ summary: result })
+    await reply({ analysis: result })
   }
 })
 ```
@@ -35,9 +35,9 @@ await agent.onTask(async (task, reply) => {
 ### Requester Agent (sends tasks)
 
 ```js
-import { AgentMesh } from 'agentmesh'
+import { SavantDex } from '@wei612/savantdex'
 
-const agent = new AgentMesh({
+const agent = new SavantDex({
   privateKey: process.env.PRIVATE_KEY,
   agentId: 'my-app',
   network: { websocketPort: 32201, externalIp: 'YOUR_SERVER_IP' }
@@ -45,25 +45,25 @@ const agent = new AgentMesh({
 
 await agent.register()
 
-const WORKER_STREAM = '0xABCD.../agentmesh/summarizer-v1'
+const WORKER_STREAM = '0xABCD.../savantdex/my-agent-v1'
 
 const taskId = await agent.sendTask(WORKER_STREAM, {
-  type: 'summarize',
-  input: { text: 'Long article text here...' }
+  type: 'analyze',
+  input: { text: 'Your input here...' }
 })
 
 const result = await agent.waitForResult(taskId, 30000)
-console.log(result.summary)
+console.log(result.analysis)
 ```
 
 ## API
 
-### `new AgentMesh(config)`
+### `new SavantDex(config)`
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
 | `privateKey` | string | Ethereum private key (hex with 0x prefix) |
-| `agentId` | string | Unique agent name, e.g. `"summarizer-v1"` |
+| `agentId` | string | Unique agent name, e.g. `"my-agent-v1"` |
 | `network.websocketPort` | number | Fixed port for Streamr node (open in firewall) |
 | `network.externalIp` | string | Public IP of the server |
 
@@ -73,14 +73,14 @@ Creates the agent's inbox stream on Polygon mainnet (if not exists) and opens pu
 - Costs ~0.01–0.05 POL in gas
 
 ### `agent.getStreamId()` → `Promise<string>`
-Returns `{address}/agentmesh/{agentId}` — share this with requesters so they can send tasks.
+Returns `{address}/savantdex/{agentId}` — share this with requesters so they can send tasks.
 
 ### `agent.sendTask(targetStreamId, task)` → `Promise<taskId>`
 Sends a task to another agent's stream.
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `task.type` | string | Task type identifier, e.g. `"summarize"` |
+| `task.type` | string | Task type identifier, e.g. `"analyze"` |
 | `task.input` | any | Task input data |
 
 ### `agent.onTask(handler)` → `Promise<void>`
@@ -100,9 +100,9 @@ Cleanly shuts down the Streamr node.
 ```json
 {
   "taskId": "task-1234567890-abc123",
-  "type": "summarize",
+  "type": "analyze",
   "input": { "text": "..." },
-  "replyTo": "0xREQUESTER.../agentmesh/my-app",
+  "replyTo": "0xREQUESTER.../savantdex/my-app",
   "from": "0xREQUESTER_ADDRESS",
   "ts": 1700000000000
 }
@@ -113,50 +113,10 @@ Cleanly shuts down the Streamr node.
 {
   "taskId": "task-1234567890-abc123",
   "type": "result",
-  "output": { "summary": "..." },
+  "output": { "analysis": "..." },
   "from": "0xWORKER_ADDRESS",
   "ts": 1700000000000
 }
-```
-
-## Agent Discovery (Registry)
-
-AgentMesh includes a public registry for discovering agents by capability.
-
-```js
-// Find an agent that can summarize
-const res = await fetch('http://39.101.135.96:3000/agents/search?capability=summarize')
-const { agents } = await res.json()
-const { streamId } = agents[0]
-
-// Send task directly
-const taskId = await agent.sendTask(streamId, {
-  type: 'summarize',
-  input: { text: 'Your text here...' }
-})
-```
-
-### Registry API
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `POST` | `/agents/register` | Register your agent |
-| `GET` | `/agents/search?capability=xxx` | Search by capability |
-| `GET` | `/agents/search?keyword=xxx` | Search by keyword |
-| `GET` | `/agents/:agentId` | Get agent details |
-| `DELETE` | `/agents/:agentId` | Remove your agent |
-
-**Register example:**
-```bash
-curl -X POST http://39.101.135.96:3000/agents/register \
-  -H "Content-Type: application/json" \
-  -d '{
-    "agentId": "my-translator-v1",
-    "streamId": "0xYOUR_ADDRESS/agentmesh/my-translator-v1",
-    "capabilities": ["translate", "en-to-zh"],
-    "description": "Translates English text to Chinese",
-    "owner": "0xYOUR_ADDRESS"
-  }'
 ```
 
 ## Requirements
@@ -172,11 +132,11 @@ Requester                    Streamr P2P Network              Worker
    │                                                             │
    │──── publish task ──────────────────────────────────────►  │
    │                                                             │  onTask handler
-   │                                                             │  calls AI API
+   │                                                             │  calls AI / data API
    │  ◄──── publish result ─────────────────────────────────── │
    │
 waitForResult resolves
 ```
 
-Each agent has an **inbox stream** on Streamr (`{address}/agentmesh/{agentId}`).
+Each agent has an **inbox stream** on Streamr (`{address}/savantdex/{agentId}`).
 Messages are routed peer-to-peer through the Streamr DHT — no central relay.

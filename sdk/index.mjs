@@ -1,11 +1,11 @@
 /**
- * AgentMesh SDK v0.1
- * Decentralized AI agent communication bus on Streamr Network
+ * SavantDex SDK v0.3
+ * Decentralized AI agent marketplace on Streamr Network
  */
 
 import { StreamrClient, StreamPermission } from '@streamr/sdk'
 
-export class AgentMesh {
+export class SavantDex {
   #client
   #streamId
   #agentId
@@ -14,7 +14,7 @@ export class AgentMesh {
   /**
    * @param {object} config
    * @param {string} config.privateKey  - Ethereum private key
-   * @param {string} config.agentId     - Unique agent identifier (e.g. "summarizer-v1")
+   * @param {string} config.agentId     - Unique agent identifier (e.g. "wallet-analyst-v1")
    * @param {object} [config.network]   - Optional Streamr network overrides
    */
   constructor({ privateKey, agentId, network = {} }) {
@@ -42,7 +42,7 @@ export class AgentMesh {
   async getStreamId() {
     if (!this.#streamId) {
       const addr = await this.getAddress()
-      this.#streamId = `${addr.toLowerCase()}/agentmesh/${this.#agentId}`
+      this.#streamId = `${addr.toLowerCase()}/savantdex/${this.#agentId}`
     }
     return this.#streamId
   }
@@ -53,7 +53,7 @@ export class AgentMesh {
    */
   async register() {
     const streamId = await this.getStreamId()
-    const stream = await this.#client.getOrCreateStream({ id: `/agentmesh/${this.#agentId}` })
+    const stream = await this.#client.getOrCreateStream({ id: `/savantdex/${this.#agentId}` })
 
     const isPublicSub = await stream.hasPermission({ permission: StreamPermission.SUBSCRIBE, public: true })
     const isPublicPub = await stream.hasPermission({ permission: StreamPermission.PUBLISH, public: true })
@@ -64,7 +64,7 @@ export class AgentMesh {
       await stream.grantPermissions({ permissions: toGrant, public: true })
     }
 
-    console.log(`[AgentMesh] Registered: ${streamId}`)
+    console.log(`[SavantDex] Registered: ${streamId}`)
     return streamId
   }
 
@@ -89,7 +89,7 @@ export class AgentMesh {
       ts: Date.now()
     })
 
-    console.log(`[AgentMesh] Task sent: ${taskId} → ${targetStreamId}`)
+    console.log(`[SavantDex] Task sent: ${taskId} → ${targetStreamId}`)
     return taskId
   }
 
@@ -103,7 +103,7 @@ export class AgentMesh {
     await this.#client.subscribe(streamId, async (msg) => {
       if (!msg.taskId) return
 
-      console.log(`[AgentMesh] Task received: ${msg.taskId} (${msg.type})`)
+      console.log(`[SavantDex] Task received: ${msg.taskId} (${msg.type})`)
 
       const reply = async (output) => {
         if (!msg.replyTo) return
@@ -114,7 +114,7 @@ export class AgentMesh {
           from: await this.getAddress(),
           ts: Date.now()
         })
-        console.log(`[AgentMesh] Result sent: ${msg.taskId} → ${msg.replyTo}`)
+        console.log(`[SavantDex] Result sent: ${msg.taskId} → ${msg.replyTo}`)
       }
 
       try {
@@ -124,7 +124,7 @@ export class AgentMesh {
       }
     })
 
-    console.log(`[AgentMesh] Listening on: ${streamId}`)
+    console.log(`[SavantDex] Listening on: ${streamId}`)
   }
 
   /**

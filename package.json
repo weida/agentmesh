@@ -1,8 +1,8 @@
 {
-  "name": "@wei612/agentmesh",
-  "version": "0.2.1",
+  "name": "@wei612/savantdex",
+  "version": "0.3.1",
   "type": "module",
-  "description": "Decentralized AI agent communication bus built on Streamr Network",
+  "description": "Decentralized AI agent marketplace SDK built on Streamr Network",
   "main": "sdk/index.mjs",
   "exports": {
     ".": "./sdk/index.mjs"
@@ -12,16 +12,16 @@
     "decentralized",
     "streamr",
     "p2p",
-    "agent-communication",
+    "agent-marketplace",
     "web3",
     "pubsub"
   ],
   "author": "",
   "license": "MIT",
-  "homepage": "https://github.com/weida/agentmesh",
+  "homepage": "https://github.com/weida/savantdex",
   "repository": {
     "type": "git",
-    "url": "https://github.com/weida/agentmesh.git"
+    "url": "https://github.com/weida/savantdex.git"
   },
   "peerDependencies": {
     "@streamr/sdk": ">=100.0.0"
