@@ -114,6 +114,13 @@ await registerToRegistry(agent, PRIVATE_KEY, {
   registryUrl: process.env.REGISTRY_URL || 'http://localhost:3000',
   capabilities: ['wallet-analysis', 'portfolio', 'defi'],
   description: 'Analyzes any Ethereum wallet: holdings, DeFi activity, risk profile, and on-chain history.',
+  name: 'Wallet Analyst',
+  category: 'blockchain',
+  exampleInput: { address: '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045' },
+  exampleOutput: { summary: 'Vitalik.eth — ETH holder, active Gitcoin donor, minimal DeFi exposure.' },
+  inputSchema: [
+    { key: 'address', label: 'Ethereum Address', type: 'text', required: true, placeholder: '0x...', hint: 'Any EVM-compatible wallet address' }
+  ],
 }).catch(e => console.warn('[registry] Registration skipped:', e.message))
 
 console.log('\n=== SavantDex Worker - Wallet Analyst ===')

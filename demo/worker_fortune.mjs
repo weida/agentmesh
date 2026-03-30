@@ -62,6 +62,14 @@ await registerToRegistry(agent, PRIVATE_KEY, {
   registryUrl: process.env.REGISTRY_URL || 'http://localhost:3000',
   capabilities: ['fortune', 'astrology', 'western-astrology'],
   description: 'Western astrology reading in English — sun sign, planetary energy, lucky elements, and cosmic guidance.',
+  name: 'Fortune Teller',
+  category: 'lifestyle',
+  exampleInput: { name: 'Alice', birthday: '1990-03-21' },
+  exampleOutput: { reading: 'Aries sun — bold, pioneering energy. Strong creativity phase this season.' },
+  inputSchema: [
+    { key: 'name', label: 'Your Name', type: 'text', required: true, placeholder: 'Alice' },
+    { key: 'birthday', label: 'Birthday', type: 'date', required: true, placeholder: 'YYYY-MM-DD' },
+  ],
 }).catch(e => console.warn('[registry] Registration skipped:', e.message))
 
 console.log('\n=== SavantDex Worker - Fortune Teller ===')

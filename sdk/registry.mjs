@@ -22,9 +22,16 @@ import { Wallet } from 'ethers'
  * @param {string} opts.registryUrl
  * @param {string[]} opts.capabilities
  * @param {string} [opts.description]
+ * @param {string} [opts.name]           Human-readable display name
+ * @param {string} [opts.category]       Category slug (e.g. 'blockchain', 'lifestyle')
+ * @param {object} [opts.exampleInput]   Example input fields { key: value }
+ * @param {object} [opts.exampleOutput]  Example output fields { key: value }
+ * @param {Array}  [opts.inputSchema]    Input field descriptors for UI rendering
+ * @param {string} [opts.docsUrl]        Link to documentation
  */
 export async function registerToRegistry(agent, privateKey, opts) {
-  const { registryUrl, capabilities, description = '' } = opts
+  const { registryUrl, capabilities, description = '',
+          name, category, exampleInput, exampleOutput, inputSchema, docsUrl } = opts
 
   const streamId = await agent.getStreamId()
   const agentId = streamId.split('/').pop()
@@ -35,10 +42,18 @@ export async function registerToRegistry(agent, privateKey, opts) {
   const message = `Register ${agentId} ${streamId} ts:${timestamp}`
   const signature = await wallet.signMessage(message)
 
+  const payload = { agentId, streamId, capabilities, description, owner, timestamp, signature }
+  if (name !== undefined)         payload.name = name
+  if (category !== undefined)     payload.category = category
+  if (exampleInput !== undefined) payload.exampleInput = exampleInput
+  if (exampleOutput !== undefined) payload.exampleOutput = exampleOutput
+  if (inputSchema !== undefined)  payload.inputSchema = inputSchema
+  if (docsUrl !== undefined)      payload.docsUrl = docsUrl
+
   const res = await fetch(`${registryUrl}/agents/register`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ agentId, streamId, capabilities, description, owner, timestamp, signature }),
+    body: JSON.stringify(payload),
   })
 
   const data = await res.json()

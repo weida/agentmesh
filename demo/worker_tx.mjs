@@ -102,6 +102,13 @@ await registerToRegistry(agent, PRIVATE_KEY, {
   registryUrl: process.env.REGISTRY_URL || 'http://localhost:3000',
   capabilities: ['explain-tx', 'blockchain', 'ethereum', 'polygon'],
   description: 'Explains any Ethereum or Polygon transaction in plain English — what happened, cost, and which protocol was involved.',
+  name: 'TX Explainer',
+  category: 'blockchain',
+  exampleInput: { hash: '0x5c504ed432cb51138bcf09aa5e8a410dd4a1e204ef84bfed1be16dfba1b22060' },
+  exampleOutput: { explanation: 'First-ever Ethereum transaction — 1 ETH sent from genesis to recipient.' },
+  inputSchema: [
+    { key: 'hash', label: 'Transaction Hash', type: 'text', required: true, placeholder: '0x...', hint: 'Ethereum or Polygon transaction hash' }
+  ],
 }).catch(e => console.warn('[registry] Registration skipped:', e.message))
 
 console.log('\n=== SavantDex Worker - Transaction Explainer ===')
