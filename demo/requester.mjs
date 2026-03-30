@@ -13,7 +13,7 @@ const PRIVATE_KEY = process.env.PRIVATE_KEY
 if (!PRIVATE_KEY) { console.error('Missing PRIVATE_KEY'); process.exit(1) }
 
 // Worker's stream ID (in production, looked up via registry)
-const WORKER_STREAM = '0x3b00420f3819c58a298bdc91b6c2dd63257eff63/agentmesh/summarizer-v1'
+const WORKER_STREAM = '0xfa59a08c450efe2b925eabb5398d75205217aee1/agentmesh/summarizer-v1'
 
 const agent = new AgentMesh({
   privateKey: PRIVATE_KEY,

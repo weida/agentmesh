@@ -1,0 +1,49 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Run tests
+        run: npm test
+
+  check-deps:
+    name: Dependency Resolution
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install savantdex deps
+        run: npm install
+
+      - name: Verify sdk/registry.mjs imports resolve
+        run: node --input-type=module <<'EOF'
+          import('./sdk/registry.mjs')
+            .then(() => console.log('sdk/registry.mjs OK'))
+            .catch(e => { console.error('FAIL:', e.message); process.exit(1) })
+          EOF

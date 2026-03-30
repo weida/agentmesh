@@ -26,6 +26,9 @@
     "type": "git",
     "url": "https://github.com/weida/savantdex.git"
   },
+  "dependencies": {
+    "ethers": "^6.0.0"
+  },
   "peerDependencies": {
     "@streamr/sdk": ">=100.0.0"
   },

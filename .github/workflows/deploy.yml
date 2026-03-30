@@ -1,0 +1,39 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    name: Deploy to VPS
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Deploy via SSH
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H "$VPS_HOST" >> ~/.ssh/known_hosts
+
+          scp -i ~/.ssh/deploy_key \
+            sdk/index.mjs sdk/keystore.mjs sdk/registry.mjs \
+            "$VPS_USER@$VPS_HOST:~/savantdex/sdk/"
+
+          scp -i ~/.ssh/deploy_key \
+            demo/worker_wallet.mjs demo/worker_tx.mjs demo/worker_fortune.mjs \
+            "$VPS_USER@$VPS_HOST:~/savantdex/demo/"
+
+          scp -i ~/.ssh/deploy_key \
+            package.json \
+            "$VPS_USER@$VPS_HOST:~/savantdex/"
+
+          ssh -i ~/.ssh/deploy_key "$VPS_USER@$VPS_HOST" \
+            'PATH=~/.npm-global/bin:$PATH pm2 restart wallet-analyst tx-explainer fortune-teller api-gateway && echo "Deploy OK"'
