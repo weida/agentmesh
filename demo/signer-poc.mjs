@@ -45,25 +45,30 @@ if (!SIGNER_ADDRESS || !/^0x[a-fA-F0-9]{40}$/.test(SIGNER_ADDRESS)) {
 // ── Remote Identity ───────────────────────────────────────────────────────────
 // Implements Streamr SDK's abstract Identity class.
 // The private key lives only in signer-poc-server.mjs.
+//
+// NOTE: Intentionally uses regular properties instead of JS private fields (#).
+// The SDK ships as CJS; this file is ESM. Node.js private-field brand checks
+// break when a class defined in ESM extends a class from a CJS bundle — the
+// instance's brand doesn't satisfy the ESM class's #field brand check.
+// Regular properties are sufficient here since RemoteSignerIdentity is not
+// exported or shared beyond this module.
 class RemoteSignerIdentity extends Identity {
-  #address
-  #signerUrl
-
-  #signLatencies = []
+  _address
+  _signerUrl
+  _signLatencies = []
 
   constructor(address, signerPort) {
     super()
-    this.#address   = address.toLowerCase()
-    this.#signerUrl = `http://127.0.0.1:${signerPort}/sign-message`
+    this._address   = address.toLowerCase()
+    this._signerUrl = `http://127.0.0.1:${signerPort}/sign-message`
   }
 
   getUserId() {
-    return Promise.resolve(this.#address)
+    return Promise.resolve(this._address)
   }
 
   getUserIdRaw() {
-    // Streamr expects the address as a lowercase hex string for ECDSA_SECP256K1_EVM
-    return Promise.resolve(Buffer.from(this.#address.slice(2), 'hex'))
+    return Promise.resolve(Buffer.from(this._address.slice(2), 'hex'))
   }
 
   getSignatureType() {
@@ -73,7 +78,7 @@ class RemoteSignerIdentity extends Identity {
   async createMessageSignature(payload) {
     const t0 = performance.now()
 
-    const res = await fetch(this.#signerUrl, {
+    const res = await fetch(this._signerUrl, {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
       body:    JSON.stringify({ payload: Buffer.from(payload).toString('hex') }),
@@ -86,7 +91,7 @@ class RemoteSignerIdentity extends Identity {
 
     const { signature } = await res.json()
     const elapsed = performance.now() - t0
-    this.#signLatencies.push(elapsed)
+    this._signLatencies.push(elapsed)
 
     // Convert hex signature to Uint8Array (65 bytes: r|s|v)
     return Buffer.from(signature.slice(2), 'hex')
@@ -103,7 +108,7 @@ class RemoteSignerIdentity extends Identity {
   }
 
   getSignLatencies() {
-    return this.#signLatencies
+    return this._signLatencies
   }
 }
 
