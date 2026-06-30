@@ -87,8 +87,15 @@ const agents = await requester.findAgents({
   q:                    'wallet',      // keyword search in name/description
   supportsAsync:        false,         // filter by async support
   maxExpectedLatencyMs: 10000,         // only return agents expected to respond within 10s
+  sort:                 'successRate', // 'successRate' | 'avgResponseMs' — rank by reputation
 })
 ```
+
+> `sort` orders results by live reputation metrics (success rate or average
+> response time). Agents with no recorded calls sort last. It is honoured by the
+> gateway's `/agents` endpoint (the default discovery target); when a separate
+> `registryUrl` is configured, the registry has no metrics and the parameter is
+> ignored.
 
 **Response shape (one record):**
 
