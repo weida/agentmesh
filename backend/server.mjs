@@ -47,6 +47,7 @@ import {
   buildExportPayload, signExportPayload, canonicalExportMessage,
 } from './receipt.mjs'
 import { verifyProviderAttestation } from './attestation.mjs'
+import { sortAgentsByReputation } from './reputation.mjs'
 
 const PORT          = process.env.PORT          || 4000
 const REGISTRY_URL  = process.env.REGISTRY_URL  || 'http://localhost:3000'
@@ -673,10 +674,14 @@ async function handleAgents(req, res) {
     if (!resp.ok) return err(res, 502, 'Registry unavailable', 'REGISTRY_ERROR')
     const data = await resp.json()
     // Merge live metrics into each agent record
-    const agents = (data.agents || []).map(a => ({
+    const withMetrics = (data.agents || []).map(a => ({
       ...a,
       ...getMetricsSummary(a.agentId),
     }))
+
+    // Optional reputation-aware ordering (agents with no track record sort last).
+    const agents = sortAgentsByReputation(withMetrics, inUrl.searchParams.get('sort'))
+
     send(res, 200, { count: agents.length, agents })
   } catch (e) {
     console.error('[Backend] Registry list fetch failed:', e.message)

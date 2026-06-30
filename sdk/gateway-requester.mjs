@@ -95,6 +95,10 @@ export class GatewayRequester {
    * @param {string}  [filters.q]
    * @param {boolean} [filters.supportsAsync]
    * @param {number}  [filters.maxExpectedLatencyMs]
+   * @param {string}  [filters.sort]  'successRate' | 'avgResponseMs' — reputation-aware
+   *                                   ordering. Only honoured when the configured
+   *                                   registryUrl points at the gateway (the
+   *                                   default), since reputation metrics live there.
    * @returns {Promise<Array>}
    */
   async findAgents(filters = {}) {
@@ -104,6 +108,7 @@ export class GatewayRequester {
     if (filters.q != null)                    params.set('q', filters.q)
     if (filters.supportsAsync != null)        params.set('supportsAsync', String(filters.supportsAsync))
     if (filters.maxExpectedLatencyMs != null) params.set('maxExpectedLatencyMs', String(filters.maxExpectedLatencyMs))
+    if (filters.sort != null)                 params.set('sort', filters.sort)
     const qs = params.toString()
     const res = await fetch(`${this.#registryUrl}/agents${qs ? '?' + qs : ''}`)
     if (!res.ok) throw new Error(`Registry error ${res.status}: ${await res.text()}`)
