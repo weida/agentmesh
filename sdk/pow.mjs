@@ -24,6 +24,29 @@ export function createPowChallenge(difficulty = POW_DIFFICULTY) {
   return { challengeId, prefix, difficulty }
 }
 
+/**
+ * Client-side PoW solver. Finds a nonce such that SHA-256(prefix + nonce) has
+ * `difficulty` leading zero bits. Synchronous and CPU-bound (~1-2s at
+ * difficulty 20). Shared by the SDK register() helpers and verifier scripts so
+ * the solving logic lives in exactly one place.
+ *
+ * @param {string} prefix      challenge prefix from createPowChallenge()
+ * @param {number} difficulty  required leading zero bits
+ * @returns {string} the solving nonce (as a string, matching wire format)
+ */
+export function solvePow(prefix, difficulty) {
+  const fullBytes = Math.floor(difficulty / 8)
+  const remainBits = difficulty % 8
+  const mask = remainBits > 0 ? (0xFF << (8 - remainBits)) & 0xFF : 0
+  for (let nonce = 0; ; nonce++) {
+    const hash = createHash('sha256').update(prefix + String(nonce)).digest()
+    let ok = true
+    for (let i = 0; i < fullBytes; i++) { if (hash[i] !== 0) { ok = false; break } }
+    if (ok && remainBits > 0 && (hash[fullBytes] & mask) !== 0) ok = false
+    if (ok) return String(nonce)
+  }
+}
+
 export function verifyPow(challengeId, nonce) {
   const entry = challenges.get(challengeId)
   if (!entry) {

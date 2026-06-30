@@ -29,9 +29,9 @@
  * Exits 0 on full green, 1 on any stage failure.
  */
 
-import { createHash } from 'crypto'
 import { Wallet } from 'ethers'
 import { GatewayRequester } from '../sdk/gateway-requester.mjs'
+import { solvePow } from '../sdk/pow.mjs'
 
 // ── Arg parsing ──────────────────────────────────────────────────────────────
 
@@ -56,19 +56,6 @@ function fail(stage, err)  {
   if (err?.code) console.error(`  code=${err.code}`)
   if (err?.status) console.error(`  status=${err.status}`)
   process.exit(1)
-}
-
-function solvePow(prefix, difficulty) {
-  const fullBytes = Math.floor(difficulty / 8)
-  const remainBits = difficulty % 8
-  const mask = remainBits > 0 ? (0xFF << (8 - remainBits)) & 0xFF : 0
-  for (let nonce = 0; ; nonce++) {
-    const hash = createHash('sha256').update(prefix + String(nonce)).digest()
-    let ok = true
-    for (let i = 0; i < fullBytes; i++) { if (hash[i] !== 0) { ok = false; break } }
-    if (ok && remainBits > 0 && (hash[fullBytes] & mask) !== 0) ok = false
-    if (ok) return String(nonce)
-  }
 }
 
 async function postJson(url, body) {

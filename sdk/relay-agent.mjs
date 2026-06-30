@@ -30,10 +30,11 @@
  */
 
 import WebSocket from 'ws'
-import { createHash, randomBytes } from 'crypto'
+import { randomBytes } from 'crypto'
 import { Wallet } from 'ethers'
 import { computeResultHash } from './canonical.mjs'
 import { buildAttestationPayload, signAttestation } from './attestation.mjs'
+import { solvePow } from './pow.mjs'
 
 const MIN_RECONNECT_MS = 1000
 const MAX_RECONNECT_MS = 60000
@@ -276,18 +277,5 @@ function trySend(ws, obj) {
     }
   } catch {
     // Swallow — connection may be closing
-  }
-}
-
-function solvePow(prefix, difficulty) {
-  const fullBytes = Math.floor(difficulty / 8)
-  const remainBits = difficulty % 8
-  const mask = remainBits > 0 ? (0xFF << (8 - remainBits)) & 0xFF : 0
-  for (let nonce = 0; ; nonce++) {
-    const hash = createHash('sha256').update(prefix + String(nonce)).digest()
-    let ok = true
-    for (let i = 0; i < fullBytes; i++) { if (hash[i] !== 0) { ok = false; break } }
-    if (ok && remainBits > 0 && (hash[fullBytes] & mask) !== 0) ok = false
-    if (ok) return String(nonce)
   }
 }
