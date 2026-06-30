@@ -76,6 +76,60 @@ export function verifyPow(challengeId, nonce) {
   entry.used = true
 }
 
+// ── Store-backed variants (multi-instance) ────────────────────────────────────
+//
+// The in-memory variants above are per-process: a challenge issued by one
+// gateway instance cannot be verified by another. These variants persist the
+// challenge in a shared StateStore (see backend/state-store.mjs) so any
+// instance can issue and any instance can verify, with single-use enforced
+// atomically. The store object must implement { set, get, setIfAbsent }.
+
+const CHALLENGE_KEY = (id) => `pow-challenge:${id}`
+const USED_KEY      = (id) => `pow-used:${id}`
+
+/** Validate a PoW solution against a known prefix/difficulty. Returns boolean. */
+function checkSolution(prefix, difficulty, nonce) {
+  if (typeof nonce !== 'string' || nonce.length === 0 || nonce.length > 20) return false
+  const hash = createHash('sha256').update(prefix + nonce).digest()
+  return hasLeadingZeroBits(hash, difficulty)
+}
+
+/**
+ * Store-backed challenge creation. Persists { prefix, difficulty } under a
+ * TTL'd key so any instance can later verify it.
+ * @returns {Promise<{ challengeId, prefix, difficulty }>}
+ */
+export async function createPowChallengeWithStore(store, difficulty = POW_DIFFICULTY) {
+  const challengeId = randomUUID()
+  const prefix = randomBytes(16).toString('hex')
+  await store.set(CHALLENGE_KEY(challengeId), JSON.stringify({ prefix, difficulty }), CHALLENGE_TTL_MS)
+  return { challengeId, prefix, difficulty }
+}
+
+/**
+ * Store-backed verification. Throws { code: 'POW_INVALID' } on any failure.
+ * Single-use is enforced via setIfAbsent on a per-challenge "used" marker, so
+ * a concurrent double-submit (even to different instances) is rejected.
+ */
+export async function verifyPowWithStore(store, challengeId, nonce) {
+  const raw = await store.get(CHALLENGE_KEY(challengeId))
+  if (!raw) {
+    const e = new Error('Challenge not found or expired'); e.code = 'POW_INVALID'; throw e
+  }
+  let entry
+  try { entry = JSON.parse(raw) } catch {
+    const e = new Error('Challenge corrupt'); e.code = 'POW_INVALID'; throw e
+  }
+  if (!checkSolution(entry.prefix, entry.difficulty, nonce)) {
+    const e = new Error('PoW solution incorrect'); e.code = 'POW_INVALID'; throw e
+  }
+  // Atomic claim-once: the first verifier to mark this challenge used wins.
+  const claimed = await store.setIfAbsent(USED_KEY(challengeId), '1', CHALLENGE_TTL_MS)
+  if (!claimed) {
+    const e = new Error('Challenge already used'); e.code = 'POW_INVALID'; throw e
+  }
+}
+
 // ── Internals ────────────────────────────────────────────────────────────────
 
 function hasLeadingZeroBits(buf, bits) {

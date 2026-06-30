@@ -24,7 +24,7 @@ import { timingSafeEqual, randomBytes, createHash } from 'crypto'
 import { execFileSync } from 'node:child_process'
 import { readFileSync, writeFileSync, existsSync, renameSync } from 'fs'
 import { initRelay, getRelayStatus, relayTask, relayAgentCount, getRelayConnections, shutdownRelay } from './ws-relay.mjs'
-import { createPowChallenge, verifyPow } from '../sdk/pow.mjs'
+import { createPowChallengeWithStore, verifyPowWithStore } from '../sdk/pow.mjs'
 import { SavantDex } from '../sdk/index.mjs'
 import { RemoteSignerIdentity } from '../sdk/remote-identity.mjs'
 import { loadSecrets } from '../sdk/secrets.mjs'
@@ -906,7 +906,7 @@ const REG_SIG_WINDOW_MS = 5 * 60 * 1000
 async function handleRegisterChallenge(req, res) {
   const winErr = await checkWindowLimit(clientKey(req))
   if (winErr) return err(res, 429, winErr.error, winErr.code)
-  send(res, 200, createPowChallenge())
+  send(res, 200, await createPowChallengeWithStore(stateStore))
 }
 
 async function handleRegisterRequester(req, res) {
@@ -927,7 +927,7 @@ async function handleRegisterRequester(req, res) {
     return err(res, 400, 'Timestamp out of range (±5 min)', 'TIMESTAMP_EXPIRED')
 
   // Verify PoW
-  try { verifyPow(challengeId, nonce) } catch (e) {
+  try { await verifyPowWithStore(stateStore, challengeId, nonce) } catch (e) {
     return err(res, 400, e.message, e.code || 'POW_INVALID')
   }
 
@@ -965,7 +965,7 @@ async function handleFaucetClaim(req, res) {
     return err(res, 400, 'Timestamp out of range (±5 min)', 'TIMESTAMP_EXPIRED')
 
   // Verify PoW
-  try { verifyPow(challengeId, nonce) } catch (e) {
+  try { await verifyPowWithStore(stateStore, challengeId, nonce) } catch (e) {
     return err(res, 400, e.message, e.code || 'POW_INVALID')
   }
 
