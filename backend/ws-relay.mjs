@@ -239,7 +239,7 @@ function handleNewConnection(ws, authTimeoutMs) {
       // Switch to normal message handling
       ws.removeAllListeners('message')
       ws.on('message', (data) => handleMessage(agentId, data))
-      ws.on('close', () => handleDisconnect(agentId))
+      ws.on('close', () => handleDisconnect(agentId, ws))
       ws.on('error', (e) => {
         console.warn(`[Relay] WebSocket error for ${agentId}: ${e.message}`)
       })
@@ -345,9 +345,16 @@ function handleMessage(agentId, raw) {
   // Unknown message type — ignore
 }
 
-function handleDisconnect(agentId) {
+function handleDisconnect(agentId, expectedWs = null) {
   const conn = connections.get(agentId)
   if (!conn) return
+
+  // Guard against a superseded connection's late 'close' event tearing down the
+  // replacement connection. When an agent reconnects, the old ws is closed but
+  // its close event fires asynchronously — by then connections.get(agentId)
+  // already points at the NEW connection. Only clean up if the closing ws is
+  // still the one we have on record.
+  if (expectedWs && conn.ws !== expectedWs) return
 
   failAllInFlight(agentId, 'Agent disconnected')
   connections.delete(agentId)

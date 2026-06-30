@@ -246,7 +246,71 @@ await test('supersede — new connection evicts old', async () => {
   await new Promise(r => setTimeout(r, 200))
 })
 
-// 9. Task routing — relayTask → result
+// 8b. Supersede regression — the OLD connection's late 'close' event must not
+// tear down the NEW connection. Before the fix, handleDisconnect(agentId) fired
+// by the old ws would delete the freshly-registered replacement connection,
+// leaving the agent effectively dead after a reconnect.
+await test('supersede — new connection survives old connection close', async () => {
+  const ws1 = await authedWs()
+  const supersededP = waitMsg(ws1, m => m.type === 'superseded')
+  const ws2 = await authedWs()
+  await supersededP
+
+  // Ensure the old ws is fully closed and its server-side 'close' handler has
+  // run before we exercise the new connection.
+  await close(ws1)
+  await new Promise(r => setTimeout(r, 300))
+
+  // The replacement connection must still be registered and routable.
+  assert.ok(getRelayStatus(AGENT_ID).connected, 'new connection still connected after old closed')
+
+  ws2.on('message', (raw) => {
+    const msg = JSON.parse(raw.toString())
+    if (msg.type === 'task') {
+      ws2.send(JSON.stringify({ type: 'result', taskId: msg.taskId, output: { ok: true } }))
+    }
+    if (msg.type === 'ping') ws2.send(JSON.stringify({ type: 'pong', ts: msg.ts }))
+  })
+
+  const res = await relayTask(AGENT_ID, 'task-supersede-1', 'test-type', { q: 1 }, 5000)
+  assert.deepEqual(res.output, { ok: true }, 'task routed to surviving connection')
+
+  await close(ws2)
+  await new Promise(r => setTimeout(r, 200))
+})
+
+// 8b. Supersede regression — the OLD connection's late 'close' event must not
+// tear down the NEW connection. Before the fix, handleDisconnect(agentId) fired
+// by the old ws would delete the freshly-registered replacement connection,
+// leaving the agent effectively dead after a reconnect.
+await test('supersede — new connection survives old connection close', async () => {
+  const ws1 = await authedWs()
+  const supersededP = waitMsg(ws1, m => m.type === 'superseded')
+  const ws2 = await authedWs()
+  await supersededP
+
+  // Make sure the old ws is fully closed and its 'close' handler has run
+  // server-side before we exercise the new connection.
+  await close(ws1)
+  await new Promise(r => setTimeout(r, 300))
+
+  // The replacement connection must still be registered and routable.
+  assert.ok(getRelayStatus(AGENT_ID).connected, 'new connection still connected after old closed')
+
+  ws2.on('message', (raw) => {
+    const msg = JSON.parse(raw.toString())
+    if (msg.type === 'task') {
+      ws2.send(JSON.stringify({ type: 'result', taskId: msg.taskId, output: { ok: true } }))
+    }
+    if (msg.type === 'ping') ws2.send(JSON.stringify({ type: 'pong', ts: msg.ts }))
+  })
+
+  const res = await relayTask(AGENT_ID, 'task-supersede-1', 'test-type', { q: 1 }, 5000)
+  assert.deepEqual(res.output, { ok: true }, 'task routed to surviving connection')
+
+  await close(ws2)
+  await new Promise(r => setTimeout(r, 200))
+})
 await test('task routing — relayTask resolves on result', async () => {
   const ws = await authedWs()
   // Set up handler for incoming tasks
