@@ -60,6 +60,14 @@ const STREAM_CACHE_TTL = 60 * 1000   // 60s
 const STREAM_CACHE_MAX_STALE_MS = 60 * 60 * 1000 // 1h hard stop on stale fallback
 const PAYMENT_ENABLED = process.env.PAYMENT_ENABLED !== 'false'
 
+// Per-task execution timeout (relay + Streamr transports and the ledger
+// reservation window). Configurable so slow agents can be given more headroom
+// without editing code. Falls back to 60s and ignores non-positive values.
+const TASK_TIMEOUT_MS = (() => {
+  const v = Number(process.env.TASK_TIMEOUT_MS)
+  return Number.isFinite(v) && v > 0 ? v : 60_000
+})()
+
 // Admin key loading:
 //   Preferred:  BACKEND_SECRETS_PATH + AGE_IDENTITY_PATH → age-encrypted JSON with { ADMIN_API_KEY }
 //   Fallback:   ADMIN_API_KEY env var (with deprecation warning)
@@ -516,7 +524,7 @@ async function handleTask(req, res) {
         providerOwnerAddress: providerOwnerAddress || '0x0000000000000000000000000000000000000000',
         taskType:             taskType || type,
         pricingModel,
-        timeoutMs:            60000,
+        timeoutMs:            TASK_TIMEOUT_MS,
         gatewayAddress,
         authMethodUsed,
       })
@@ -550,13 +558,13 @@ async function handleTask(req, res) {
 
     if (relay.connected) {
       console.log(`[Backend] Task ${taskId} → relay (${agentId})`)
-      const relayRes = await relayTask(agentId, taskId, taskType, sanitizedInput, 60000)
+      const relayRes = await relayTask(agentId, taskId, taskType, sanitizedInput, TASK_TIMEOUT_MS)
       result = relayRes.output
       providerAttestation = relayRes.attestation
     } else {
       console.log(`[Backend] Task ${taskId} → Streamr P2P (${workerStream})`)
       await gateway.sendTask(workerStream, { type, input: sanitizedInput, taskId })
-      result = await gateway.waitForResult(taskId, 60000, providerOwnerAddress || workerStream.split('/')[0])
+      result = await gateway.waitForResult(taskId, TASK_TIMEOUT_MS, providerOwnerAddress || workerStream.split('/')[0])
     }
 
     const receivedAt = Date.now() - start
