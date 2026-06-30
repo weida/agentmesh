@@ -56,7 +56,7 @@ import process from 'process'
 process.umask(0o077)
 
 import { createServer } from 'http'
-import { readFileSync, writeFileSync, existsSync } from 'fs'
+import { readFileSync, writeFileSync, renameSync, existsSync } from 'fs'
 import { timingSafeEqual } from 'crypto'
 import { verifyMessage } from 'ethers'
 import { createPowChallenge, verifyPow } from '../sdk/pow.mjs'
@@ -115,7 +115,13 @@ function loadDB() {
 }
 
 function saveDB(db) {
-  writeFileSync(DB_FILE, JSON.stringify(db, null, 2))
+  // Atomic write: serialize to a temp file in the same directory, then rename
+  // over the target. rename(2) is atomic on POSIX, so a crash mid-write can
+  // never leave a truncated/corrupt agents.json — readers see either the old
+  // file or the fully-written new one.
+  const tmp = `${DB_FILE}.tmp`
+  writeFileSync(tmp, JSON.stringify(db, null, 2))
+  renameSync(tmp, DB_FILE)
 }
 
 // ── Signature helpers ─────────────────────────────────────────────────────────
