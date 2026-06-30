@@ -118,8 +118,12 @@ infra), measure, and only build Option B if load skew demands it.
      sites. Severity is low: challenges already carry a 5-minute TTL and are
      single-use, so a cross-instance miss only forces an occasional re-fetch,
      never a security gap. Tracked for a follow-up.
-   - Add `RedisStore` implementing the `StateStore` contract; gate behind
-     `STATE_BACKEND=redis` with Redis-container integration tests in CI.
+   - **[done]** `RedisStore` implementing the `StateStore` contract, selected
+     via `STATE_BACKEND=redis`. The `redis` client is a backend
+     optionalDependency, loaded lazily so memory-mode installs never need it.
+     Bounded reconnect + connect timeout so a dead Redis fails fast instead of
+     hanging request promises. CI runs the shared contract against a live Redis
+     service container (`redis-store` job, `REDIS_TEST_URL`).
 3. Relay routing (item 4): start with Option A sticky routing at the LB; document
    the agentId→instance contract.
 

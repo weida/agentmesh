@@ -28,6 +28,8 @@
  * added later implementing this same shape; call sites do not change.
  */
 
+import { RedisStore } from './redis-store.mjs'
+
 const STATE_BACKEND = process.env.STATE_BACKEND || 'memory'
 
 /**
@@ -94,14 +96,16 @@ export class MemoryStore {
 }
 
 /**
- * Create the configured store. Defaults to MemoryStore. A future RedisStore
- * would be wired here behind STATE_BACKEND=redis, implementing the same shape.
+ * Create the configured store. Defaults to MemoryStore. STATE_BACKEND=redis
+ * selects RedisStore (the `redis` package is an optionalDependency, loaded
+ * lazily by RedisStore on first use — not at import time).
  */
 export function createStateStore(opts = {}) {
   switch (STATE_BACKEND) {
     case 'memory':
       return new MemoryStore(opts)
-    // case 'redis': return new RedisStore(opts)  // future — see docs/multi-instance-design.md
+    case 'redis':
+      return new RedisStore(opts)
     default:
       console.warn(`[StateStore] Unknown STATE_BACKEND="${STATE_BACKEND}", falling back to memory`)
       return new MemoryStore(opts)
