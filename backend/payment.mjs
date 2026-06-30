@@ -1229,35 +1229,43 @@ export function createSettlementRecord({
 }) {
   const database = getDb()
 
-  const receivable = database.prepare(
-    `SELECT accruedBaseUnits FROM ProviderReceivable WHERE ownerAddress = ? AND currency = ?`
-  ).get(ownerAddress, currency)
-  const totalReceivableBaseUnitsAtSettlement = receivable?.accruedBaseUnits || '0'
+  // Wrap the read-check-write in a transaction so the balance check and the
+  // pending-settlement insert are atomic.
+  return database.transaction(() => {
+    const receivable = database.prepare(
+      `SELECT accruedBaseUnits FROM ProviderReceivable WHERE ownerAddress = ? AND currency = ?`
+    ).get(ownerAddress, currency)
+    const totalReceivableBaseUnitsAtSettlement = receivable?.accruedBaseUnits || '0'
 
-  // Compute current unpaid = accrued - sum(completed settlements)
-  const completedRows = database.prepare(`
-    SELECT amountBaseUnits FROM ProviderSettlementRecord
-    WHERE ownerAddress = ? AND currency = ? AND status = 'completed'
-  `).all(ownerAddress, currency)
-  const alreadySettled = completedRows.reduce((acc, r) => acc + BigInt(r.amountBaseUnits), 0n)
-  const unpaid = BigInt(totalReceivableBaseUnitsAtSettlement) - alreadySettled
+    // Compute current unpaid = accrued - sum(completed + pending settlements).
+    // Pending settlements MUST be reserved against the balance: otherwise an
+    // admin could create multiple pending settlements that each individually
+    // pass the "<= unpaid" check (because pending ones were ignored), then
+    // complete them all and over-settle the provider's receivable (double-pay).
+    const reservedRows = database.prepare(`
+      SELECT amountBaseUnits FROM ProviderSettlementRecord
+      WHERE ownerAddress = ? AND currency = ? AND status IN ('completed', 'pending')
+    `).all(ownerAddress, currency)
+    const alreadyReserved = reservedRows.reduce((acc, r) => acc + BigInt(r.amountBaseUnits), 0n)
+    const unpaid = BigInt(totalReceivableBaseUnitsAtSettlement) - alreadyReserved
 
-  if (BigInt(amountBaseUnits) > unpaid)
-    throw Object.assign(
-      new Error(`Settlement amount ${amountBaseUnits} exceeds unpaid balance ${unpaid.toString()}`),
-      { code: 'EXCEEDS_UNPAID_BALANCE' }
-    )
+    if (BigInt(amountBaseUnits) > unpaid)
+      throw Object.assign(
+        new Error(`Settlement amount ${amountBaseUnits} exceeds unpaid balance ${unpaid.toString()}`),
+        { code: 'EXCEEDS_UNPAID_BALANCE' }
+      )
 
-  const settlementId = randomUUID()
-  const now = nowIso()
-  database.prepare(`
-    INSERT INTO ProviderSettlementRecord
-      (settlementId, ownerAddress, currency, amountBaseUnits,
-       totalReceivableBaseUnitsAtSettlement, method, reference, status, createdAt, processedAt)
-    VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?, NULL)
-  `).run(settlementId, ownerAddress, currency, amountBaseUnits,
-    totalReceivableBaseUnitsAtSettlement, method, reference, now)
-  return { settlementId }
+    const settlementId = randomUUID()
+    const now = nowIso()
+    database.prepare(`
+      INSERT INTO ProviderSettlementRecord
+        (settlementId, ownerAddress, currency, amountBaseUnits,
+         totalReceivableBaseUnitsAtSettlement, method, reference, status, createdAt, processedAt)
+      VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?, NULL)
+    `).run(settlementId, ownerAddress, currency, amountBaseUnits,
+      totalReceivableBaseUnitsAtSettlement, method, reference, now)
+    return { settlementId }
+  })()
 }
 
 export function processSettlement(settlementId, decision) {
