@@ -295,6 +295,56 @@ console.log('\nTest 10: paid task without budget is rejected before submission')
   assert(accruedBefore === accruedAfter, 'provider receivable unchanged after rejected submission')
 }
 
+// ── Regression: non-completed terminal status releases the reservation ──────────
+// Guards the gateway bug where a non-timeout task failure (relay error, worker
+// error, agent disconnect) left the InvocationRecord in 'submitted' and never
+// refunded the reserved budget. markStatus('failed') must return the reserved
+// amount to remaining and zero out the reservation.
+{
+  seedRequester({
+    rawKey: 'key-refund', requesterAgentId: 'req-refund',
+    ownerAddress: '0xrefund',
+    remainingBaseUnits:  (ONE_DATA * 100n).toString(),
+    maxPerTaskBaseUnits: (ONE_DATA * 10n).toString(),
+    dailyLimitBaseUnits: (ONE_DATA * 20n).toString(),
+  })
+
+  const before = getBudget('req-refund')
+
+  writeSubmitted({
+    taskId: 'task-refund-1', requesterAgentId: 'req-refund',
+    providerAgentId: 'agent-fixed', providerOwnerAddress: PROVIDER,
+    taskType: 'test', pricingModel: FIXED_PRICING,
+  })
+
+  const reserved = getBudget('req-refund')
+  assert(
+    BigInt(reserved.remainingBaseUnits) === BigInt(before.remainingBaseUnits) - BigInt(PRICE),
+    'reservation debits remaining on submit',
+  )
+  assert(BigInt(reserved.reservedBaseUnits) === BigInt(PRICE), 'reservation tracked in reservedBaseUnits')
+
+  // Simulate a non-timeout failure (the path that previously leaked budget).
+  markStatus('task-refund-1', 'failed')
+
+  const after = getBudget('req-refund')
+  assert(
+    BigInt(after.remainingBaseUnits) === BigInt(before.remainingBaseUnits),
+    'failed task refunds reserved amount back to remaining',
+  )
+  assert(BigInt(after.reservedBaseUnits) === 0n, 'failed task clears the reservation')
+
+  // And it must never accrue to the provider.
+  const { balance } = getProviderReceivable(PROVIDER)
+  const accrued = BigInt(balance.find(b => true)?.accruedBaseUnits || '0')
+  // chargeCompleted should refuse a non-completed task even if called.
+  const charge = chargeCompleted('task-refund-1')
+  assert(charge.charged === false, 'chargeCompleted refuses a failed task')
+  const { balance: balance2 } = getProviderReceivable(PROVIDER)
+  const accrued2 = BigInt(balance2.find(b => true)?.accruedBaseUnits || '0')
+  assert(accrued === accrued2, 'failed task does not accrue provider receivable')
+}
+
 // ── Summary ───────────────────────────────────────────────────────────────────
 
 console.log(`\n${passed + failed} tests: ${passed} passed, ${failed} failed`)

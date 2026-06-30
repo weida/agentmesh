@@ -647,9 +647,14 @@ async function handleTask(req, res) {
     recordCall(agentId, false, Date.now() - start)
     console.error(`[Backend] Failed (${transportMode}): ${e.message}`)
 
-    // Mark timeout in ledger
-    if (PAYMENT_ENABLED && requesterAuth && taskId && isTimeout) {
-      try { markStatus(taskId, 'timeout') } catch {}
+    // Move the invocation to a terminal state in the ledger so the reserved
+    // budget is released. Previously only the timeout branch did this, which
+    // leaked the reservation for every non-timeout failure (relay error,
+    // worker error, agent disconnect) — the InvocationRecord stayed
+    // 'submitted' forever and the requester's reserved funds were never
+    // returned. markStatus('failed'/'timeout') refunds the reservation.
+    if (PAYMENT_ENABLED && requesterAuth && taskId) {
+      try { markStatus(taskId, isTimeout ? 'timeout' : 'failed') } catch {}
     }
 
     err(res, isTimeout ? 504 : 500, isTimeout ? 'Task timed out' : 'Task execution failed', isTimeout ? 'TIMEOUT' : 'WORKER_ERROR')
