@@ -148,26 +148,18 @@ export class GatewayRequester {
       throw new Error(`Agent "${agentId}" has no taskType — cannot build task envelope`)
     }
 
-    const authHeaders = await this.#getAuthHeaders()
     const startMs = Date.now()
 
-    const controller = new AbortController()
-    const timer = setTimeout(() => controller.abort(), timeout)
+    let res = await this.#postTask({ agentId, taskType, input, timeout })
 
-    let res
-    try {
-      res = await fetch(`${this.#gatewayUrl}/task`, {
-        method:  'POST',
-        headers: { 'Content-Type': 'application/json', ...authHeaders },
-        body:    JSON.stringify({ agentId, type: taskType, input }),
-        signal:  controller.signal,
-      })
-    } catch (e) {
-      clearTimeout(timer)
-      if (e.name === 'AbortError') throw new Error(`Task timed out after ${timeout}ms`)
-      throw e
+    // Wallet auth: a 401 means our cached session was rejected server-side
+    // (gateway restart, manual revoke, clock skew) even though the local
+    // expiresAt still looked valid. Drop the stale session, re-authenticate,
+    // and retry once — this is the "re-auth happens automatically" contract.
+    if (res.status === 401 && this.#auth.type === 'wallet') {
+      this.#session = null
+      res = await this.#postTask({ agentId, taskType, input, timeout })
     }
-    clearTimeout(timer)
 
     if (!res.ok) {
       const body = await res.json().catch(() => ({}))
@@ -186,6 +178,31 @@ export class GatewayRequester {
       output:  hasError ? null : data.result,
       error:   hasError ? data.result.error : null,
       meta: { durationMs, agentId, taskType },
+    }
+  }
+
+  /**
+   * Issue a single POST /task request with fresh auth headers.
+   * Returns the raw Response so the caller can inspect status for retry logic.
+   */
+  async #postTask({ agentId, taskType, input, timeout }) {
+    const authHeaders = await this.#getAuthHeaders()
+
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), timeout)
+
+    try {
+      return await fetch(`${this.#gatewayUrl}/task`, {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders },
+        body:    JSON.stringify({ agentId, type: taskType, input }),
+        signal:  controller.signal,
+      })
+    } catch (e) {
+      if (e.name === 'AbortError') throw new Error(`Task timed out after ${timeout}ms`)
+      throw e
+    } finally {
+      clearTimeout(timer)
     }
   }
 
