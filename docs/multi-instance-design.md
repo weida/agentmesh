@@ -102,6 +102,57 @@ onto a request/response over pub/sub.
 Recommendation: ship **Option A** first (no code change to relayTask, pure
 infra), measure, and only build Option B if load skew demands it.
 
+#### Option A — implementation contract
+
+No application code changes. The invariant the deployment must guarantee:
+
+> **All HTTP `/task` requests for an agent, and that agent's `/ws/agent`
+> WebSocket, are routed to the same backend instance.**
+
+Because `relayTask` looks the agent up in the instance-local `connections`
+map, the task and the connection only meet when they land on the same
+instance. The routing key is the **`agentId`**.
+
+The challenge: the `agentId` lives in different places for the two request
+types:
+
+- **WebSocket connect** (`/ws/agent`): the agent sends `agentId` inside the
+  first `auth` message — *after* the connection is established. An L4/L7 LB
+  cannot see it at routing time.
+- **HTTP `/task`**: `agentId` is in the JSON body — also not in the URL.
+
+Two ways to make `agentId` routable without touching the protocol:
+
+1. **Expose `agentId` in the connect URL / header.** Have providers connect to
+   `wss://host/ws/agent?agentId=<id>` (the SDK already knows it) and requesters
+   send `/task?agentId=<id>` or an `X-Agent-Id` header. Configure the LB to hash
+   that field to a backend (e.g. nginx `hash $arg_agentId consistent;` in an
+   upstream block, or an Envoy/HAProxy consistent-hash policy). Consistent
+   hashing minimizes reshuffling when instances scale.
+2. **Dedicated relay tier.** Run the WebSocket relay as its own horizontally
+   sharded service, sharded by `agentId`, with the HTTP API forwarding tasks to
+   the shard that owns the agent (a thin version of Option B, but only between
+   API tier and relay tier).
+
+Recommended: option 1 with consistent hashing on `agentId`. It needs only LB
+config and a one-line SDK/requester change to surface `agentId` in the URL —
+no server logic change.
+
+Operational notes:
+
+- Health checks must not be hashed by `agentId` (use `/health` on every
+  instance directly).
+- On instance add/remove, consistent hashing reshuffles a fraction of agents;
+  those agents' WebSockets drop and the SDK's auto-reconnect (with the fatal
+  vs. transient close-code handling already in place) re-establishes them on
+  the new owner. In-flight tasks on a moved agent fail and must be retried by
+  the requester — acceptable, and already how a single-instance restart behaves.
+- The shared StateStore (nonces, rate limits) is unaffected by routing; it is
+  consulted regardless of which instance handles a request.
+
+This section is a **deployment guide**, not a code change. Option B remains the
+fallback if `agentId` load skew makes sticky routing impractical.
+
 ## Rollout
 
 1. **[done]** Land the `StateStore` abstraction with `MemoryStore` as default —
@@ -112,20 +163,21 @@ infra), measure, and only build Option B if load skew demands it.
    - **[done]** Request rate window — `server.mjs` `checkWindowLimit` uses
      `store.incrWithWindow` (fixed-window, approximate global). The in-flight
      concurrency cap stays local by design.
-   - **[deferred]** PoW register challenges — left on the in-memory map for now.
-     Making it cross-instance requires turning the synchronous `verifyPow` into
-     an async read+atomic-mark and updating both the registry and backend call
-     sites. Severity is low: challenges already carry a 5-minute TTL and are
-     single-use, so a cross-instance miss only forces an occasional re-fetch,
-     never a security gap. Tracked for a follow-up.
+   - **[done]** PoW register challenges — `createPowChallengeWithStore` /
+     `verifyPowWithStore` persist the challenge in the shared store and enforce
+     single-use atomically via `setIfAbsent`. The backend gateway uses these;
+     the in-memory `createPowChallenge` / `verifyPow` are kept for SDK/external
+     callers and the registry (single registry process, so process-local is
+     fine). Covered by `pow-store.test.mjs`.
    - **[done]** `RedisStore` implementing the `StateStore` contract, selected
      via `STATE_BACKEND=redis`. The `redis` client is a backend
      optionalDependency, loaded lazily so memory-mode installs never need it.
      Bounded reconnect + connect timeout so a dead Redis fails fast instead of
      hanging request promises. CI runs the shared contract against a live Redis
      service container (`redis-store` job, `REDIS_TEST_URL`).
-3. Relay routing (item 4): start with Option A sticky routing at the LB; document
-   the agentId→instance contract.
+3. **[documented]** Relay routing (item 4): Option A sticky routing — see the
+   "Option A — implementation contract" section above. Deployment/LB guide, no
+   code change required.
 
 Each step is independently shippable and the default path stays single-instance
 with zero new dependencies.
