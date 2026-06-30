@@ -29,7 +29,11 @@
     "sdk"
   ],
   "scripts": {
-    "test": "node --test test/*.test.mjs"
+    "test": "node --test test/*.test.mjs",
+    "test:backend": "node --test backend/*.test.mjs",
+    "test:registry": "node --test registry/*.test.mjs",
+    "test:all": "npm run test && npm run test:backend && npm run test:registry",
+    "install:all": "npm install && npm --prefix backend install && npm --prefix registry install"
   },
   "author": "",
   "license": "MIT",
