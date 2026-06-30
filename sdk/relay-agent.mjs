@@ -39,6 +39,15 @@ import { solvePow } from './pow.mjs'
 const MIN_RECONNECT_MS = 1000
 const MAX_RECONNECT_MS = 60000
 
+// Relay close codes that indicate a permanent auth failure — reconnecting with
+// the same credentials will only fail again, so the agent should stop and
+// surface the error rather than spin forever. Mirrors backend/ws-relay.mjs:
+//   4004 CLOSE_SIGNATURE_MISMATCH — wrong key / corrupt signature
+//   4005 CLOSE_REGISTRY_MISMATCH  — agent not registered / owner mismatch
+// Transient auth failures (4001 timeout, 4002 expected, 4003 timestamp window)
+// are NOT fatal: a clock skew or a slow send can recover on retry.
+const FATAL_AUTH_CLOSE_CODES = new Set([4004, 4005])
+
 export class RelayAgent {
   #gatewayUrl
   #signer
@@ -167,6 +176,14 @@ export class RelayAgent {
 
         const reasonStr = reason?.toString() || ''
         console.log(`[RelayAgent] Disconnected: code=${code} reason=${reasonStr}`)
+
+        // A permanent auth failure must not be retried — reconnecting with the
+        // same credentials loops forever. Stop and surface the error.
+        if (FATAL_AUTH_CLOSE_CODES.has(code)) {
+          console.error(`[RelayAgent] Fatal auth failure (code=${code}) — not reconnecting: ${reasonStr}`)
+          if (isInitial) reject(new Error(`Fatal auth failure (code=${code}): ${reasonStr}`))
+          return
+        }
 
         if (!isInitial || wasConnected) {
           // Auto-reconnect with backoff
