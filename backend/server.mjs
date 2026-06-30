@@ -23,7 +23,7 @@ import { ethers } from 'ethers'
 import { timingSafeEqual, randomBytes, createHash } from 'crypto'
 import { execFileSync } from 'node:child_process'
 import { readFileSync, writeFileSync, existsSync, renameSync } from 'fs'
-import { initRelay, getRelayStatus, relayTask, relayAgentCount, getRelayConnections } from './ws-relay.mjs'
+import { initRelay, getRelayStatus, relayTask, relayAgentCount, getRelayConnections, shutdownRelay } from './ws-relay.mjs'
 import { createPowChallenge, verifyPow } from '../sdk/pow.mjs'
 import { SavantDex } from '../sdk/index.mjs'
 import { RemoteSignerIdentity } from '../sdk/remote-identity.mjs'
@@ -1228,8 +1228,34 @@ server.listen(PORT, '127.0.0.1', () => {
   initRelay(server, { registryUrl: REGISTRY_URL })
 })
 
-process.on('SIGINT', async () => {
-  saveMetrics()
-  await gateway.destroy()
-  process.exit(0)
-})
+process.on('SIGINT', () => shutdown('SIGINT'))
+process.on('SIGTERM', () => shutdown('SIGTERM'))
+
+let shuttingDown = false
+async function shutdown(signal) {
+  if (shuttingDown) return
+  shuttingDown = true
+  console.log(`[Backend] ${signal} received — shutting down gracefully`)
+
+  // Hard deadline so a stuck connection or hang can't block exit forever.
+  const forceTimer = setTimeout(() => {
+    console.warn('[Backend] Graceful shutdown timed out — forcing exit')
+    process.exit(1)
+  }, 10_000)
+  forceTimer.unref()
+
+  try {
+    // Stop accepting new HTTP connections and drain in-flight requests.
+    await new Promise((resolve) => server.close(resolve))
+    // Tear down the relay (heartbeat, connections, ws server).
+    shutdownRelay()
+    // Persist the latest metrics and release the Streamr client.
+    saveMetrics()
+    await gateway.destroy()
+  } catch (e) {
+    console.error(`[Backend] Error during shutdown: ${e.message}`)
+  } finally {
+    clearTimeout(forceTimer)
+    process.exit(0)
+  }
+}

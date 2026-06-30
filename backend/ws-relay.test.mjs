@@ -26,7 +26,7 @@ import { Wallet } from 'ethers'
 import WebSocket from 'ws'
 import { randomBytes } from 'crypto'
 import {
-  initRelay, getRelayStatus, relayTask, relayAgentCount, getRelayConnections,
+  initRelay, getRelayStatus, relayTask, relayAgentCount, getRelayConnections, shutdownRelay,
 } from './ws-relay.mjs'
 
 // ── Fake registry ────────────────────────────────────────────────────────────
@@ -419,6 +419,40 @@ await test('relayTask rejects when agent offline', async () => {
   } catch (e) {
     assert.ok(e.message.includes('not connected'), `expected not connected, got: ${e.message}`)
   }
+})
+
+// 15. shutdownRelay — closes connections, fails in-flight, stops heartbeat.
+// Must run LAST: it tears down the relay's ws server.
+await test('shutdownRelay closes connections and fails in-flight tasks', async () => {
+  const ws = await authedWs()
+  ws.on('message', (raw) => {
+    const msg = JSON.parse(raw.toString())
+    if (msg.type === 'ping') ws.send(JSON.stringify({ type: 'pong', ts: msg.ts }))
+    // never answer tasks — leave it in-flight
+  })
+
+  assert.equal(getRelayStatus(AGENT_ID).connected, true, 'connected before shutdown')
+
+  const taskP = relayTask(AGENT_ID, 'task-shutdown', 'test-type', {}, 10000)
+  await new Promise(r => setTimeout(r, 50))
+
+  shutdownRelay()
+
+  // In-flight task is rejected, not left hanging.
+  try {
+    await taskP
+    assert.fail('in-flight task should reject on shutdown')
+  } catch (e) {
+    assert.ok(e.message.includes('shutting down') || e.message.includes('disconnected'),
+      `expected shutdown rejection, got: ${e.message}`)
+  }
+
+  // Connection registry is cleared.
+  assert.equal(relayAgentCount(), 0, 'all connections cleared after shutdown')
+  assert.equal(getRelayStatus(AGENT_ID).connected, false, 'agent no longer connected')
+
+  try { ws.close() } catch { /* may already be closing */ }
+  await new Promise(r => setTimeout(r, 100))
 })
 
 // ── Teardown ─────────────────────────────────────────────────────────────────

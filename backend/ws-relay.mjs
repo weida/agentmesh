@@ -59,6 +59,7 @@ const usedNonces = new Map()
 let registryUrl = ''
 let heartbeatMs = DEFAULT_HEARTBEAT_MS
 let heartbeatInterval = null
+let wss = null
 
 // ── Public API ───────────────────────────────────────────────────────────────
 
@@ -79,13 +80,14 @@ export function initRelay(httpServer, opts) {
   const authTimeoutMs = opts.authTimeoutMs || DEFAULT_AUTH_TIMEOUT_MS
   const maxFrameBytes = opts.maxFrameBytes || DEFAULT_MAX_FRAME_BYTES
 
-  const wss = new WebSocketServer({
+  const wssLocal = new WebSocketServer({
     server: httpServer,
     path: '/ws/agent',
     maxPayload: maxFrameBytes,
   })
+  wss = wssLocal
 
-  wss.on('connection', (ws) => {
+  wssLocal.on('connection', (ws) => {
     handleNewConnection(ws, authTimeoutMs)
   })
 
@@ -104,6 +106,27 @@ export function initRelay(httpServer, opts) {
   }, heartbeatMs)
 
   console.log(`[Relay] Initialized on /ws/agent (heartbeat ${heartbeatMs}ms, max frame ${maxFrameBytes}B)`)
+}
+
+/**
+ * Gracefully shut the relay down: stop the heartbeat sweep, fail any in-flight
+ * tasks, close every agent connection, and close the WebSocketServer. Safe to
+ * call multiple times. Used by the server's SIGINT/SIGTERM handler.
+ */
+export function shutdownRelay() {
+  if (heartbeatInterval) {
+    clearInterval(heartbeatInterval)
+    heartbeatInterval = null
+  }
+  for (const [agentId, conn] of connections) {
+    failAllInFlight(agentId, 'Server shutting down')
+    try { conn.ws.close(1001, 'Server shutting down') } catch { /* closing already */ }
+  }
+  connections.clear()
+  if (wss) {
+    try { wss.close() } catch { /* already closed */ }
+    wss = null
+  }
 }
 
 /**
