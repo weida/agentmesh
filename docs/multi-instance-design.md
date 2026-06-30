@@ -104,11 +104,22 @@ infra), measure, and only build Option B if load skew demands it.
 
 ## Rollout
 
-1. Land the `StateStore` abstraction with `MemoryStore` as default — **no
-   behavior change**, fully covered by existing tests.
-2. Add `RedisStore` + wire nonces, PoW challenges, rate limiting (items 1–3).
-   Gate behind `STATE_BACKEND=redis`. Add integration tests against a Redis
-   container in CI.
+1. **[done]** Land the `StateStore` abstraction with `MemoryStore` as default —
+   **no behavior change**, covered by contract tests (`state-store.test.mjs`).
+2. **[in progress]** Wire call sites onto the store:
+   - **[done]** Relay auth nonces — `ws-relay.mjs` now claims each
+     `${timestamp}:${nonce}` via `store.setIfAbsent` (atomic, cross-instance).
+   - **[done]** Request rate window — `server.mjs` `checkWindowLimit` uses
+     `store.incrWithWindow` (fixed-window, approximate global). The in-flight
+     concurrency cap stays local by design.
+   - **[deferred]** PoW register challenges — left on the in-memory map for now.
+     Making it cross-instance requires turning the synchronous `verifyPow` into
+     an async read+atomic-mark and updating both the registry and backend call
+     sites. Severity is low: challenges already carry a 5-minute TTL and are
+     single-use, so a cross-instance miss only forces an occasional re-fetch,
+     never a security gap. Tracked for a follow-up.
+   - Add `RedisStore` implementing the `StateStore` contract; gate behind
+     `STATE_BACKEND=redis` with Redis-container integration tests in CI.
 3. Relay routing (item 4): start with Option A sticky routing at the LB; document
    the agentId→instance contract.
 

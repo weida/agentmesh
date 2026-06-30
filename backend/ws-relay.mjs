@@ -32,6 +32,7 @@
 import { WebSocketServer } from 'ws'
 import { ethers } from 'ethers'
 import { randomBytes } from 'crypto'
+import { createStateStore } from './state-store.mjs'
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
@@ -53,8 +54,10 @@ const CLOSE_HEARTBEAT_TIMEOUT = 4020
 const connections = new Map()
 
 // Nonce dedup: `${timestamp}:${nonce}` → expiry (ms since epoch)
-// Prevents replay of a valid auth message within the timestamp window.
-const usedNonces = new Map()
+// Replay protection for relay auth: a `${timestamp}:${nonce}` key is claimed
+// once via store.setIfAbsent. Backed by the shared StateStore so the guard
+// holds across gateway instances (memory store in single-instance mode).
+let store = null
 
 let registryUrl = ''
 let heartbeatMs = DEFAULT_HEARTBEAT_MS
@@ -77,6 +80,7 @@ let wss = null
 export function initRelay(httpServer, opts) {
   registryUrl = opts.registryUrl
   heartbeatMs = opts.heartbeatMs || DEFAULT_HEARTBEAT_MS
+  store = opts.store || createStateStore()
   const authTimeoutMs = opts.authTimeoutMs || DEFAULT_AUTH_TIMEOUT_MS
   const maxFrameBytes = opts.maxFrameBytes || DEFAULT_MAX_FRAME_BYTES
 
@@ -289,16 +293,14 @@ async function validateAuth(msg) {
     return { ok: false, error: 'Timestamp out of range', code: CLOSE_TIMESTAMP_RANGE }
   }
 
-  // Nonce dedup — evict expired entries first
-  const now = Date.now()
-  for (const [key, expiry] of usedNonces) {
-    if (expiry <= now) usedNonces.delete(key)
-  }
-  const nonceKey = `${timestamp}:${nonce}`
-  if (usedNonces.has(nonceKey)) {
+  // Nonce dedup — atomic claim-once via the shared store. Returns false if this
+  // `${timestamp}:${nonce}` was already used within the timestamp window, which
+  // catches replays even across gateway instances.
+  const nonceKey = `relay-nonce:${timestamp}:${nonce}`
+  const claimed = await store.setIfAbsent(nonceKey, '1', TIMESTAMP_WINDOW_MS)
+  if (!claimed) {
     return { ok: false, error: 'Nonce already used', code: CLOSE_AUTH_EXPECTED }
   }
-  usedNonces.set(nonceKey, timestamp + TIMESTAMP_WINDOW_MS)
 
   // Signature verification
   const canonical = `savantdex-relay:${agentId}:${ownerAddress.toLowerCase()}:${timestamp}:${nonce}`

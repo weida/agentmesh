@@ -48,6 +48,7 @@ import {
 } from './receipt.mjs'
 import { verifyProviderAttestation } from './attestation.mjs'
 import { sortAgentsByReputation } from './reputation.mjs'
+import { createStateStore } from './state-store.mjs'
 
 const PORT          = process.env.PORT          || 4000
 const REGISTRY_URL  = process.env.REGISTRY_URL  || 'http://localhost:3000'
@@ -223,7 +224,9 @@ try {
 // TRUSTED_PROXY_IPS includes the peer — otherwise the header is ignored to stop trivial
 // spoofing of the rate-limit key.
 const inFlight = new Map()
-const rlWindow = new Map() // key -> array of timestamps
+// Shared state store: relay replay-nonces and the request-rate window live here
+// so they hold across gateway instances. MemoryStore in single-instance mode.
+const stateStore = createStateStore()
 const RL_WINDOW_MS      = 60_000
 const RL_WINDOW_MAX     = 60     // /task + /auth total per minute per client
 const RL_INFLIGHT_MAX   = 5
@@ -249,27 +252,15 @@ function checkConcurrentLimit(key) {
   return null
 }
 
-function checkWindowLimit(key) {
-  const now = Date.now()
-  const cutoff = now - RL_WINDOW_MS
-  let hits = rlWindow.get(key)
-  if (!hits) { hits = []; rlWindow.set(key, hits) }
-  while (hits.length && hits[0] < cutoff) hits.shift()
-  if (hits.length >= RL_WINDOW_MAX) {
+async function checkWindowLimit(key) {
+  // Fixed-window counter in the shared store: approximate global rate limiting
+  // across instances. The count expires RL_WINDOW_MS after the first hit.
+  const count = await stateStore.incrWithWindow(`rl:${key}`, RL_WINDOW_MS)
+  if (count > RL_WINDOW_MAX) {
     return { error: 'Rate limit exceeded, please slow down', code: 'RATE_LIMITED' }
   }
-  hits.push(now)
   return null
 }
-
-// Periodic cleanup: drop idle keys so the map does not grow unbounded under churn.
-setInterval(() => {
-  const cutoff = Date.now() - RL_WINDOW_MS
-  for (const [k, hits] of rlWindow) {
-    while (hits.length && hits[0] < cutoff) hits.shift()
-    if (hits.length === 0) rlWindow.delete(k)
-  }
-}, RL_WINDOW_MS).unref()
 
 // --- HTTP helpers ---
 
@@ -441,7 +432,7 @@ async function handleTask(req, res) {
 
   const concErr = checkConcurrentLimit(ip)
   if (concErr) return err(res, 429, concErr.error, concErr.code)
-  const winErr = checkWindowLimit(ip)
+  const winErr = await checkWindowLimit(ip)
   if (winErr) return err(res, 429, winErr.error, winErr.code)
 
   inFlight.set(ip, (inFlight.get(ip) || 0) + 1)
@@ -845,7 +836,7 @@ async function handleGetAuthMethods(req, requesterAgentId, res) {
 // ── D3: wallet challenge + session handlers ────────────────────────────────────
 
 async function handleCreateChallenge(req, res) {
-  const winErr = checkWindowLimit(clientKey(req))
+  const winErr = await checkWindowLimit(clientKey(req))
   if (winErr) return err(res, 429, winErr.error, winErr.code)
   let body
   try { body = JSON.parse(await readBody(req)) } catch { return err(res, 400, 'Invalid JSON body', 'INVALID_JSON') }
@@ -862,7 +853,7 @@ async function handleCreateChallenge(req, res) {
 }
 
 async function handleVerifySignature(req, res) {
-  const winErr = checkWindowLimit(clientKey(req))
+  const winErr = await checkWindowLimit(clientKey(req))
   if (winErr) return err(res, 429, winErr.error, winErr.code)
   let body
   try { body = JSON.parse(await readBody(req)) } catch { return err(res, 400, 'Invalid JSON body', 'INVALID_JSON') }
@@ -893,7 +884,7 @@ async function handleVerifySignature(req, res) {
 }
 
 async function handleRevokeSession(req, res) {
-  const winErr = checkWindowLimit(clientKey(req))
+  const winErr = await checkWindowLimit(clientKey(req))
   if (winErr) return err(res, 429, winErr.error, winErr.code)
   let body
   try { body = JSON.parse(await readBody(req)) } catch { return err(res, 400, 'Invalid JSON body', 'INVALID_JSON') }
@@ -912,14 +903,14 @@ async function handleRevokeSession(req, res) {
 const AGENT_ID_RE = /^[a-z0-9][a-z0-9._-]{2,48}[a-z0-9]$/
 const REG_SIG_WINDOW_MS = 5 * 60 * 1000
 
-function handleRegisterChallenge(req, res) {
-  const winErr = checkWindowLimit(clientKey(req))
+async function handleRegisterChallenge(req, res) {
+  const winErr = await checkWindowLimit(clientKey(req))
   if (winErr) return err(res, 429, winErr.error, winErr.code)
   send(res, 200, createPowChallenge())
 }
 
 async function handleRegisterRequester(req, res) {
-  const winErr = checkWindowLimit(clientKey(req))
+  const winErr = await checkWindowLimit(clientKey(req))
   if (winErr) return err(res, 429, winErr.error, winErr.code)
 
   let body
@@ -960,7 +951,7 @@ async function handleRegisterRequester(req, res) {
 }
 
 async function handleFaucetClaim(req, res) {
-  const winErr = checkWindowLimit(clientKey(req))
+  const winErr = await checkWindowLimit(clientKey(req))
   if (winErr) return err(res, 429, winErr.error, winErr.code)
 
   let body
@@ -1225,7 +1216,7 @@ server.listen(PORT, '127.0.0.1', () => {
   console.log(`  Admin:   ${ADMIN_API_KEY ? 'ENABLED (X-Admin-Key required)' : 'NOT CONFIGURED (set ADMIN_API_KEY)'}`)
 
   // Initialize WebSocket relay on the same HTTP server
-  initRelay(server, { registryUrl: REGISTRY_URL })
+  initRelay(server, { registryUrl: REGISTRY_URL, store: stateStore })
 })
 
 process.on('SIGINT', () => shutdown('SIGINT'))
